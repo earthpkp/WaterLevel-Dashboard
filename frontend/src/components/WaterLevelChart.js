@@ -42,10 +42,21 @@ const CustomTooltip = ({ active, payload, label }) => {
 const WaterLevelChart = ({ data, dateRange, setDateRange, metadata, selectedStations }) => {
   // Track the last observe period for the separator line
   const [lastObservePeriodState, setLastObservePeriodState] = React.useState(null);
+  // Track brush range for statistics - initially show all data
+  const [brushRange, setBrushRange] = React.useState(null);
+  // Store formatted data to avoid recalculation
+  const [chartData, setChartData] = React.useState([]);
 
   const handleDateChange = (e) => {
     const { name, value } = e.target;
     setDateRange(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleBrushChange = (brushData) => {
+    console.log('Brush changed:', brushData);
+    if (brushData) {
+      setBrushRange(brushData);
+    }
   };
 
   const setQuickRange = (days) => {
@@ -165,6 +176,12 @@ const WaterLevelChart = ({ data, dateRange, setDateRange, metadata, selectedStat
     return finalData;
   };
 
+  // Update chart data when data or dateRange changes
+  React.useEffect(() => {
+    const formattedData = formatData();
+    setChartData(formattedData);
+  }, [data, dateRange, selectedStations]);
+
   // Filter stations to display
   const getVisibleStations = () => {
     if (!selectedStations || selectedStations.length === 0) {
@@ -197,6 +214,51 @@ const WaterLevelChart = ({ data, dateRange, setDateRange, metadata, selectedStat
     const topPadding = maxBankLevel * 0.1; // Add 10% padding above highest bank level
     return [0, Math.ceil(maxBankLevel + topPadding)];
   };
+
+  // Calculate statistics for visible range (based on Brush)
+  const calculateStatistics = () => {
+    // Use chartData from state instead of calling formatData()
+    if (chartData.length === 0) return {};
+    
+    // Get data slice based on brush range
+    let dataSlice;
+    if (brushRange && brushRange.startIndex !== undefined && brushRange.endIndex !== undefined) {
+      dataSlice = chartData.slice(brushRange.startIndex, brushRange.endIndex + 1);
+    } else {
+      // Show all data if no brush range selected
+      dataSlice = chartData;
+    }
+
+    const stats = {};
+    
+    visibleStations.forEach(stationId => {
+      const observeKey = `${stationId}_obs`;
+      const forecastKey = `${stationId}_fc`;
+      
+      // Collect all values (both observe and forecast)
+      const values = dataSlice
+        .map(item => {
+          const obsValue = item[observeKey];
+          const fcValue = item[forecastKey];
+          return [obsValue, fcValue];
+        })
+        .flat()
+        .filter(val => val !== null && val !== undefined && !isNaN(val));
+
+      if (values.length > 0) {
+        stats[stationId] = {
+          max: Math.max(...values),
+          min: Math.min(...values),
+          avg: values.reduce((sum, val) => sum + val, 0) / values.length,
+          count: values.length
+        };
+      }
+    });
+
+    return stats;
+  };
+
+  const statistics = calculateStatistics();
 
   return (
     <div className="chart-wrapper">
@@ -256,7 +318,7 @@ const WaterLevelChart = ({ data, dateRange, setDateRange, metadata, selectedStat
       </div>
 
       <ResponsiveContainer width="100%" height={600}>
-        <ComposedChart data={formatData()} margin={{ top: 20, right: 65, left: 20, bottom: 20 }}>
+        <ComposedChart data={chartData} margin={{ top: 20, right: 65, left: 20, bottom: 20 }}>
           <defs>
             <linearGradient id="colorX274" x1="0" y1="0" x2="0" y2="1">
               <stop offset="5%" stopColor="#8884d8" stopOpacity={0.8} />
@@ -437,29 +499,75 @@ const WaterLevelChart = ({ data, dateRange, setDateRange, metadata, selectedStat
             stroke="#667eea"
             fill="#f0f0f0"
             travellerWidth={10}
+            onChange={handleBrushChange}
           />
         </ComposedChart>
       </ResponsiveContainer>
 
-      <div style={{ marginTop: '20px', padding: '15px', background: '#f8f9fa', borderRadius: '10px' }}>
-        <h3 style={{ marginBottom: '10px', color: '#667eea' }}>📌 คำอธิบาย:</h3>
-        <div style={{ display: 'flex', gap: '30px', flexWrap: 'wrap', marginBottom: '15px' }}>
-          <div>
-            <strong>Observe:</strong> เส้นทึบ + พื้นที่แรเงา (ข้อมูลที่ผ่านมาและวันนี้)
-          </div>
-          <div>
-            <strong>Forecast:</strong> เส้นประ (ข้อมูลคาดการณ์ในอนาคต)
+      {/* Statistics Panel - Based on Brush Range */}
+      {Object.keys(statistics).length > 0 && (
+        <div style={{ 
+          marginTop: '20px', 
+          padding: '20px', 
+          background: '#ffffff', 
+          borderRadius: '10px',
+          border: '1px solid #e0e0e0',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+        }}>
+          <h3 style={{ 
+            marginBottom: '15px', 
+            color: '#667eea', 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '8px',
+            fontSize: '1.2em'
+          }}>
+            📊 สถิติระดับน้ำ (ช่วงที่เลือก)
+          </h3>
+          <div style={{ 
+            display: 'grid', 
+            gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', 
+            gap: '15px' 
+          }}>
+            {Object.entries(statistics).map(([stationId, stats]) => (
+              <div 
+                key={stationId}
+                style={{ 
+                  background: '#f8f9fa', 
+                  padding: '15px', 
+                  borderRadius: '8px',
+                  border: `2px solid ${colors[stationId] || '#ccc'}`
+                }}
+              >
+                <h4 style={{ 
+                  color: colors[stationId] || '#333', 
+                  marginBottom: '12px',
+                  fontSize: '1.1em',
+                  fontWeight: 'bold'
+                }}>
+                  สถานี {stationId}
+                </h4>
+                <div style={{ fontSize: '0.95em', lineHeight: '2', color: '#333' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
+                    <span>สูงสุด:</span>
+                    <strong style={{ color: '#d32f2f' }}>{stats.max.toFixed(2)} ม.</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
+                    <span>ต่ำสุด:</span>
+                    <strong style={{ color: '#1976d2' }}>{stats.min.toFixed(2)} ม.</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
+                    <span>ค่าเฉลี่ย:</span>
+                    <strong style={{ color: '#388e3c' }}>{stats.avg.toFixed(2)} ม.</strong>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
-        <h3 style={{ marginBottom: '10px', color: '#667eea' }}>ข้อมูลระดับตลิ่ง:</h3>
-        <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
-          {metadata.map(station => (
-            <div key={station.id}>
-              <strong>{station.station_id}:</strong> {parseFloat(station.bank_level).toFixed(2)} ม.
-            </div>
-          ))}
-        </div>
-      </div>
+      )}
+
+     
     </div>
   );
 };

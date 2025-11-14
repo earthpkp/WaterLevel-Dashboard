@@ -77,26 +77,16 @@ function Dashboard() {
   return (
     <div className="dashboard-content">
       <div className="dashboard-header">
-        <h1>🌊 ระบบติดตามระดับน้ำ</h1>
+        <h1>ระบบติดตามระดับน้ำ</h1>
         <p>Water Level Monitoring Dashboard</p>
-        {latestData && (
-          <p style={{ marginTop: '10px', color: '#999' }}>
-            อัปเดตล่าสุด: {new Date(latestData.date_time).toLocaleString('th-TH')}
-          </p>
-        )}
+      
       </div>
 
       {error && <div className="error">{error}</div>}
 
       {alerts.length > 0 && <AlertsPanel alerts={alerts} />}
 
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: '1fr 1fr',
-        gap: '20px',
-        marginBottom: '30px',
-        alignItems: 'stretch'
-      }}>
+      <div className="dashboard-grid">
         <StationMap
           metadata={metadata}
           latestData={latestData}
