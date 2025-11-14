@@ -1,6 +1,7 @@
 import React from 'react';
 import {
   Area,
+  Line,
   ComposedChart,
   XAxis,
   YAxis,
@@ -11,6 +12,32 @@ import {
   ReferenceLine,
   Brush
 } from 'recharts';
+
+// Custom Tooltip - hide forecast at connection point (day 12)
+const CustomTooltip = ({ active, payload, label }) => {
+  if (active && payload && payload.length) {
+    const dataPoint = payload[0]?.payload;
+    const isConnectionPoint = dataPoint?._isConnectionPoint;
+
+    return (
+      <div style={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', border: '1px solid #ccc', padding: '10px', borderRadius: '4px' }}>
+        <p style={{ fontWeight: 'bold', marginBottom: '5px' }}>{label}</p>
+        {payload.map((entry, index) => {
+          // At connection point (day 12): hide Forecast
+          if (isConnectionPoint && entry.name.includes('Forecast')) {
+            return null;
+          }
+          return (
+            <p key={index} style={{ color: entry.color, margin: '2px 0' }}>
+              {entry.name}: {entry.value?.toFixed(2)} ม.
+            </p>
+          );
+        })}
+      </div>
+    );
+  }
+  return null;
+};
 
 const WaterLevelChart = ({ data, dateRange, setDateRange, metadata, selectedStations }) => {
   // Track the last observe period for the separator line
@@ -39,10 +66,22 @@ const WaterLevelChart = ({ data, dateRange, setDateRange, metadata, selectedStat
   };
 
   const formatData = () => {
-    // Get current date (without time)
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const currentDate = today.toISOString().split('T')[0];
+    // Get current date in Thailand timezone (GMT+7)
+    const now = new Date();
+    
+    // Method 1: Use Intl.DateTimeFormat for accurate timezone conversion
+    const thailandDateStr = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Bangkok',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).format(now);
+    
+    const currentDate = thailandDateStr; // Already in YYYY-MM-DD format
+
+    console.log('📅 Current Thailand Date:', currentDate);
+    console.log('🕐 Browser Local Time:', now.toLocaleString());
+    console.log('🇹🇭 Thailand Time:', now.toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' }));
 
     // Group data by period and separate observe/forecast based on date
     const groupedData = {};
@@ -55,11 +94,15 @@ const WaterLevelChart = ({ data, dateRange, setDateRange, metadata, selectedStat
         groupedData[period] = { period };
       }
 
-      // Determine if this is observe or forecast based on date comparison
-      const isPastOrToday = period <= currentDate;
+      // Use data_type from database if available, otherwise fall back to date comparison
+      const isObserve = item.data_type === 'observe' || 
+                        (item.data_type === 'forecast' ? false : period <= currentDate);
+      
+      // Check if this is a future date (for forecast data) - include current date
+      const isFutureDate = period >= currentDate;
 
-      if (isPastOrToday) {
-        // Past or today = Observe (solid line with gradient)
+      if (isObserve) {
+        // Observe data (solid line with gradient) - for past and present
         groupedData[period]['X.274_obs'] = parseFloat(item.x_274_avg);
         groupedData[period]['X.119A_obs'] = parseFloat(item.x_119a_avg);
         groupedData[period]['X.119_obs'] = parseFloat(item.x_119_avg);
@@ -70,27 +113,56 @@ const WaterLevelChart = ({ data, dateRange, setDateRange, metadata, selectedStat
           'X.119': parseFloat(item.x_119_avg)
         };
         lastObservePeriod = period;
-      } else {
-        // Future = Forecast (dashed line)
+      } else if (isFutureDate) {
+        // Forecast data (dashed line) - only for future dates
         groupedData[period]['X.274_fc'] = parseFloat(item.x_274_avg);
         groupedData[period]['X.119A_fc'] = parseFloat(item.x_119a_avg);
         groupedData[period]['X.119_fc'] = parseFloat(item.x_119_avg);
       }
+      // else: ignore forecast data for past dates
     });
 
-    // Add connection point: add last observe values to the last observe period as forecast start
-    if (lastObserveData && lastObservePeriod && groupedData[lastObservePeriod]) {
-      groupedData[lastObservePeriod]['X.274_fc'] = lastObserveData['X.274'];
-      groupedData[lastObservePeriod]['X.119A_fc'] = lastObserveData['X.119A'];
-      groupedData[lastObservePeriod]['X.119_fc'] = lastObserveData['X.119'];
+    console.log('🎯 Last Observe Period:', lastObservePeriod);
+
+    // Strategy: Create smooth connection between Observe and Forecast lines
+    // Add BOTH observe data to forecast line AND forecast data to connection point
+    if (lastObserveData && lastObservePeriod && currentDate && groupedData[currentDate]) {
+      const firstForecast = {
+        'X.274': groupedData[currentDate]['X.274_fc'],
+        'X.119A': groupedData[currentDate]['X.119A_fc'],
+        'X.119': groupedData[currentDate]['X.119_fc']
+      };
+      
+      // Step 1: Add forecast at last observe date (day 12) - this shows start of dashed line
+      if (groupedData[lastObservePeriod] && firstForecast['X.274']) {
+        groupedData[lastObservePeriod]['X.274_fc'] = groupedData[lastObservePeriod]['X.274_obs'];
+        groupedData[lastObservePeriod]['X.119A_fc'] = groupedData[lastObservePeriod]['X.119A_obs'];
+        groupedData[lastObservePeriod]['X.119_fc'] = groupedData[lastObservePeriod]['X.119_obs'];
+        groupedData[lastObservePeriod]['_isConnectionPoint'] = true;
+      }
     }
 
-    // Update state with last observe period
+
+    // Update state with last observe period (for reference, but not used for separator line anymore)
     if (lastObservePeriod && lastObservePeriod !== lastObservePeriodState) {
       setLastObservePeriodState(lastObservePeriod);
     }
 
-    return Object.values(groupedData).sort((a, b) => a.period.localeCompare(b.period));
+    const finalData = Object.values(groupedData).sort((a, b) => a.period.localeCompare(b.period));
+    
+    // Debug: Log connection points
+    console.log('📊 Chart Data:');
+    finalData.forEach(item => {
+      if (item.period >= '2025-11-11' && item.period <= '2025-11-14') {
+        console.log(`  ${item.period}:`, {
+          obs: item['X.119_obs']?.toFixed(2) || 'null',
+          fc: item['X.119_fc']?.toFixed(2) || 'null',
+          line: item['X.119_line']?.toFixed(2) || 'null'
+        });
+      }
+    });
+    
+    return finalData;
   };
 
   // Filter stations to display
@@ -128,7 +200,7 @@ const WaterLevelChart = ({ data, dateRange, setDateRange, metadata, selectedStat
 
   return (
     <div className="chart-wrapper">
-      <h2 style={{ color: '#667eea', marginBottom: '20px' }}>
+      <h2 style={{ color: '#667eea', marginBottom: '10px' }}>
         📊 กราฟระดับน้ำ (Observe + Forecast)
         {selectedStations && selectedStations.length > 0 && (
           <span style={{ fontSize: '0.8em', marginLeft: '10px', color: '#82ca9d' }}>
@@ -136,6 +208,9 @@ const WaterLevelChart = ({ data, dateRange, setDateRange, metadata, selectedStat
           </span>
         )}
       </h2>
+      <p style={{ fontSize: '0.85em', color: '#666', marginBottom: '15px', fontStyle: 'italic' }}>
+        🕐 เส้นแบ่ง Observe | Forecast อ้างอิงเวลาปัจจุบันของประเทศไทย (GMT+7)
+      </p>
 
       <div style={{ marginBottom: '20px' }}>
         <div style={{ display: 'flex', gap: '10px', marginBottom: '15px', flexWrap: 'wrap' }}>
@@ -209,10 +284,7 @@ const WaterLevelChart = ({ data, dateRange, setDateRange, metadata, selectedStat
             tick={{ fontSize: 12 }}
             domain={getYAxisDomain()}
           />
-          <Tooltip
-            contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', border: '1px solid #ccc' }}
-            labelStyle={{ fontWeight: 'bold' }}
-          />
+          <Tooltip content={<CustomTooltip />} />
           <Legend
             wrapperStyle={{ paddingTop: '10px' }}
             iconType="line"
@@ -243,22 +315,44 @@ const WaterLevelChart = ({ data, dateRange, setDateRange, metadata, selectedStat
             })}
 
           {/* Vertical line to separate Observe and Forecast data */}
-          {lastObservePeriodState && (
-            <ReferenceLine
-              x={lastObservePeriodState}
-              stroke="#ff6b6b"
-              strokeWidth={3}
-              strokeDasharray="3 3"
-              label={{
-                value: 'Observe | Forecast',
-                position: 'top',
-                fill: '#ff6b6b',
-                fontSize: 12,
-                fontWeight: 'bold',
-                offset: 10
-              }}
-            />
-          )}
+          {(() => {
+            // Get current Thailand date and time for separator line
+            const now = new Date();
+            const thailandDateStr = new Intl.DateTimeFormat('en-CA', {
+              timeZone: 'Asia/Bangkok',
+              year: 'numeric',
+              month: '2-digit',
+              day: '2-digit'
+            }).format(now);
+            
+            const thailandTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Bangkok' }));
+            const thaiDateStr = thailandTime.toLocaleDateString('th-TH', {
+              year: 'numeric',
+              month: 'short',
+              day: 'numeric'
+            });
+            const thaiTimeStr = thailandTime.toLocaleTimeString('th-TH', {
+              hour: '2-digit',
+              minute: '2-digit'
+            });
+            
+            return (
+              <ReferenceLine
+                x={thailandDateStr}
+                stroke="#ff6b6b"
+                strokeWidth={3}
+                strokeDasharray="3 3"
+                label={{
+                  value: `Observe | Forecast (${thaiDateStr} ${thaiTimeStr})`,
+                  position: 'top',
+                  fill: '#ff6b6b',
+                  fontSize: 12,
+                  fontWeight: 'bold',
+                  offset: 10
+                }}
+              />
+            );
+          })()}
 
           {/* Area Charts - Observe data (solid with gradient) */}
           {visibleStations.includes('X.274') && (
@@ -271,16 +365,17 @@ const WaterLevelChart = ({ data, dateRange, setDateRange, metadata, selectedStat
                 fill="url(#colorX274)"
                 name="X.274 (Observe)"
                 connectNulls={true}
+                dot={false}
               />
-              <Area
+              <Line
                 type="monotone"
                 dataKey="X.274_fc"
                 stroke={colors['X.274']}
-                strokeWidth={2}
+                strokeWidth={3}
                 strokeDasharray="5 5"
-                fill="none"
                 name="X.274 (Forecast)"
                 connectNulls={true}
+                dot={false}
               />
             </>
           )}
@@ -294,21 +389,23 @@ const WaterLevelChart = ({ data, dateRange, setDateRange, metadata, selectedStat
                 fill="url(#colorX119A)"
                 name="X.119A (Observe)"
                 connectNulls={true}
+                dot={false}
               />
-              <Area
+              <Line
                 type="monotone"
                 dataKey="X.119A_fc"
                 stroke={colors['X.119A']}
-                strokeWidth={2}
+                strokeWidth={3}
                 strokeDasharray="5 5"
-                fill="none"
                 name="X.119A (Forecast)"
                 connectNulls={true}
+                dot={false}
               />
             </>
           )}
           {visibleStations.includes('X.119') && (
             <>
+              {/* Observe: Area with gradient fill */}
               <Area
                 type="monotone"
                 dataKey="X.119_obs"
@@ -317,16 +414,18 @@ const WaterLevelChart = ({ data, dateRange, setDateRange, metadata, selectedStat
                 fill="url(#colorX119)"
                 name="X.119 (Observe)"
                 connectNulls={true}
+                dot={false}
               />
-              <Area
+              {/* Forecast: Dashed line only, no fill */}
+              <Line
                 type="monotone"
                 dataKey="X.119_fc"
                 stroke={colors['X.119']}
-                strokeWidth={2}
+                strokeWidth={3}
                 strokeDasharray="5 5"
-                fill="none"
                 name="X.119 (Forecast)"
                 connectNulls={true}
+                dot={false}
               />
             </>
           )}
