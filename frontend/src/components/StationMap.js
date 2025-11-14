@@ -119,7 +119,7 @@ const StationMap = ({ metadata, latestData, onStationSelect, selectedStations })
             <MapContainer
                 center={[centerLat, centerLon]}
                 zoom={10}
-                style={{ height: '1000px', width: '100%', borderRadius: '10px' }}
+                style={{ height: '950px', width: '100%', borderRadius: '10px' }}
             >
                 <TileLayer
                     attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'

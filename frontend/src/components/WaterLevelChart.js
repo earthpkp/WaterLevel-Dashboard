@@ -270,11 +270,9 @@ const WaterLevelChart = ({ data, dateRange, setDateRange, metadata, selectedStat
           </span>
         )}
       </h2>
-      <p style={{ fontSize: '0.85em', color: '#666', marginBottom: '15px', fontStyle: 'italic' }}>
-        🕐 เส้นแบ่ง Observe | Forecast อ้างอิงเวลาปัจจุบันของประเทศไทย (GMT+7)
-      </p>
+     
 
-      <div style={{ marginBottom: '20px' }}>
+      <div style={{ marginBottom: '20px', marginTop: '20px' }}>
         <div style={{ display: 'flex', gap: '10px', marginBottom: '15px', flexWrap: 'wrap' }}>
           <button className="btn btn-small" onClick={() => setQuickRange(1)}>1 วัน</button>
           <button className="btn btn-small" onClick={() => setQuickRange(7)}>7 วัน</button>
@@ -405,7 +403,7 @@ const WaterLevelChart = ({ data, dateRange, setDateRange, metadata, selectedStat
                 strokeWidth={3}
                 strokeDasharray="3 3"
                 label={{
-                  value: `Observe | Forecast (${thaiDateStr} ${thaiTimeStr})`,
+                  value: `Observe | Forecast `,
                   position: 'top',
                   fill: '#ff6b6b',
                   fontSize: 12,
