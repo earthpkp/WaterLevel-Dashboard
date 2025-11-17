@@ -13,23 +13,38 @@ import {
   Brush
 } from 'recharts';
 
-// Custom Tooltip - hide forecast at connection point (day 12)
-const CustomTooltip = ({ active, payload, label }) => {
+// Custom Tooltip - show station names with (พยากรณ์) for forecast
+const CustomTooltip = ({ active, payload, label, metadata }) => {
   if (active && payload && payload.length) {
     const dataPoint = payload[0]?.payload;
     const isConnectionPoint = dataPoint?._isConnectionPoint;
+
+    // Helper function to get station name from dataKey
+    const getStationNameFromDataKey = (dataKey) => {
+      // Extract station ID from dataKey (e.g., "X.274_obs" -> "X.274")
+      const stationId = dataKey.replace('_obs', '').replace('_fc', '');
+      const station = metadata.find(s => s.station_id === stationId);
+      return station?.station_name || stationId;
+    };
+
+    // Helper function to check if dataKey is forecast
+    const isForecast = (dataKey) => dataKey.endsWith('_fc');
 
     return (
       <div style={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', border: '1px solid #ccc', padding: '10px', borderRadius: '4px' }}>
         <p style={{ fontWeight: 'bold', marginBottom: '5px' }}>{label}</p>
         {payload.map((entry, index) => {
-          // At connection point (day 12): hide Forecast
-          if (isConnectionPoint && entry.name.includes('Forecast')) {
+          // At connection point: hide Forecast
+          if (isConnectionPoint && isForecast(entry.dataKey)) {
             return null;
           }
+          
+          const stationName = getStationNameFromDataKey(entry.dataKey);
+          const label = isForecast(entry.dataKey) ? `${stationName} (พยากรณ์)` : stationName;
+          
           return (
             <p key={index} style={{ color: entry.color, margin: '2px 0' }}>
-              {entry.name}: {entry.value?.toFixed(2)} ม.
+              {label}: {entry.value?.toFixed(2)} ม.
             </p>
           );
         })}
@@ -39,6 +54,76 @@ const CustomTooltip = ({ active, payload, label }) => {
   return null;
 };
 
+// Custom Legend - show only station names (no duplicates) with interactive toggle
+const CustomLegend = ({ payload, colors, getStationName, allStations, hiddenStations, onToggleStation }) => {
+  // Filter out forecast entries and duplicates
+  const uniqueStations = {};
+  payload.forEach(entry => {
+    const dataKey = entry.dataKey;
+    if (dataKey && dataKey.endsWith('_obs')) {
+      const stationId = dataKey.replace('_obs', '');
+      if (!uniqueStations[stationId]) {
+        uniqueStations[stationId] = {
+          stationId,
+          color: colors[stationId] || entry.color
+        };
+      }
+    }
+  });
+
+  // Use allStations to show all available stations, not just visible ones
+  const stationsToShow = allStations || Object.keys(uniqueStations).map(id => uniqueStations[id].stationId);
+
+  return (
+    <div style={{ 
+      display: 'flex', 
+      justifyContent: 'center', 
+      flexWrap: 'wrap', 
+      gap: '20px',
+      paddingTop: '10px'
+    }}>
+      {stationsToShow.map((stationId) => {
+        const isHidden = hiddenStations.has(stationId);
+        const color = colors[stationId];
+        
+        return (
+          <div 
+            key={stationId} 
+            onClick={() => onToggleStation(stationId)}
+            style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '8px',
+              cursor: 'pointer',
+              opacity: isHidden ? 0.4 : 1,
+              transition: 'opacity 0.2s',
+              padding: '4px 8px',
+              borderRadius: '4px',
+              backgroundColor: isHidden ? '#f5f5f5' : 'transparent'
+            }}
+            title={isHidden ? 'คลิกเพื่อแสดง' : 'คลิกเพื่อซ่อน'}
+          >
+            <div style={{ 
+              width: '30px', 
+              height: '4px', 
+              backgroundColor: color,
+              borderRadius: '2px'
+            }} />
+            <span style={{ 
+              fontSize: '14px', 
+              color: isHidden ? '#999' : '#333',
+              fontWeight: isHidden ? '400' : '500',
+              textDecoration: isHidden ? 'line-through' : 'none'
+            }}>
+              {getStationName(stationId)}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
 const WaterLevelChart = ({ data, dateRange, setDateRange, metadata, selectedStations }) => {
   // Track the last observe period for the separator line
   const [lastObservePeriodState, setLastObservePeriodState] = React.useState(null);
@@ -46,6 +131,21 @@ const WaterLevelChart = ({ data, dateRange, setDateRange, metadata, selectedStat
   const [brushRange, setBrushRange] = React.useState(null);
   // Store formatted data to avoid recalculation
   const [chartData, setChartData] = React.useState([]);
+  // Track hidden stations (for legend toggle) - use Set for better performance
+  const [hiddenStations, setHiddenStations] = React.useState(new Set());
+
+  // Toggle station visibility
+  const handleToggleStation = (stationId) => {
+    setHiddenStations(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(stationId)) {
+        newSet.delete(stationId);
+      } else {
+        newSet.add(stationId);
+      }
+      return newSet;
+    });
+  };
 
   const handleDateChange = (e) => {
     const { name, value } = e.target;
@@ -59,17 +159,21 @@ const WaterLevelChart = ({ data, dateRange, setDateRange, metadata, selectedStat
   };
 
   const setQuickRange = (days) => {
-    const end = new Date('2025-11-16');  // Latest forecast data
-    const start = new Date('2025-11-16');
+    // Use current date as end date
+    const now = new Date();
+    const end = new Date();
+    const start = new Date();
 
     if (days === 'all') {
-      setDateRange({ start: '2025-10-24', end: '2025-11-16', aggregation: 'day' });
+      // Show all available data from earliest to today
+      setDateRange({ start: '2025-10-24', end: '', aggregation: 'day' });
     } else {
-      start.setDate(end.getDate() - days);
+      // Calculate start date by subtracting days from today
+      start.setDate(now.getDate() - days);
       const aggregation = 'day';  // Always use day for this dataset
       setDateRange({
         start: start.toISOString().split('T')[0],
-        end: end.toISOString().split('T')[0],
+        end: '', // Leave end date empty to show all data from start date onwards
         aggregation
       });
     }
@@ -112,11 +216,17 @@ const WaterLevelChart = ({ data, dateRange, setDateRange, metadata, selectedStat
         groupedData[period]['X.274_obs'] = parseFloat(item.x_274_avg);
         groupedData[period]['X.119A_obs'] = parseFloat(item.x_119a_avg);
         groupedData[period]['X.119_obs'] = parseFloat(item.x_119_avg);
+        groupedData[period]['X.5C_obs'] = parseFloat(item.x_5c_avg);
+        groupedData[period]['X.37A_obs'] = parseFloat(item.x_37a_avg);
+        groupedData[period]['X.217_obs'] = parseFloat(item.x_217_avg);
         // Keep track of last observe data and period
         lastObserveData = {
           'X.274': parseFloat(item.x_274_avg),
           'X.119A': parseFloat(item.x_119a_avg),
-          'X.119': parseFloat(item.x_119_avg)
+          'X.119': parseFloat(item.x_119_avg),
+          'X.5C': parseFloat(item.x_5c_avg),
+          'X.37A': parseFloat(item.x_37a_avg),
+          'X.217': parseFloat(item.x_217_avg)
         };
         lastObservePeriod = period;
       } else if (isFutureDate) {
@@ -124,25 +234,34 @@ const WaterLevelChart = ({ data, dateRange, setDateRange, metadata, selectedStat
         groupedData[period]['X.274_fc'] = parseFloat(item.x_274_avg);
         groupedData[period]['X.119A_fc'] = parseFloat(item.x_119a_avg);
         groupedData[period]['X.119_fc'] = parseFloat(item.x_119_avg);
+        groupedData[period]['X.5C_fc'] = parseFloat(item.x_5c_avg);
+        groupedData[period]['X.37A_fc'] = parseFloat(item.x_37a_avg);
+        groupedData[period]['X.217_fc'] = parseFloat(item.x_217_avg);
       }
       // else: ignore forecast data for past dates
     });
 
     // Strategy: Create smooth connection between Observe and Forecast lines
-    // Add BOTH observe data to forecast line AND forecast data to connection point
-    if (lastObserveData && lastObservePeriod && currentDate && groupedData[currentDate]) {
-      const firstForecast = {
-        'X.274': groupedData[currentDate]['X.274_fc'],
-        'X.119A': groupedData[currentDate]['X.119A_fc'],
-        'X.119': groupedData[currentDate]['X.119_fc']
-      };
+    // Add forecast values to the last observe date to create connection
+    if (lastObserveData && lastObservePeriod) {
+      // Find the next date after lastObservePeriod (first forecast date)
+      const dates = Object.keys(groupedData).sort();
+      const lastObserveIndex = dates.indexOf(lastObservePeriod);
+      const nextDate = dates[lastObserveIndex + 1];
       
-      // Step 1: Add forecast at last observe date (day 12) - this shows start of dashed line
-      if (groupedData[lastObservePeriod] && firstForecast['X.274']) {
-        groupedData[lastObservePeriod]['X.274_fc'] = groupedData[lastObservePeriod]['X.274_obs'];
-        groupedData[lastObservePeriod]['X.119A_fc'] = groupedData[lastObservePeriod]['X.119A_obs'];
-        groupedData[lastObservePeriod]['X.119_fc'] = groupedData[lastObservePeriod]['X.119_obs'];
-        groupedData[lastObservePeriod]['_isConnectionPoint'] = true;
+      // If there's a next date with forecast data, connect the lines
+      if (nextDate && groupedData[nextDate]) {
+        // Add forecast line starting point at last observe date
+        // This creates a smooth connection between observe (solid) and forecast (dashed)
+        if (groupedData[lastObservePeriod]) {
+          groupedData[lastObservePeriod]['X.274_fc'] = groupedData[lastObservePeriod]['X.274_obs'];
+          groupedData[lastObservePeriod]['X.119A_fc'] = groupedData[lastObservePeriod]['X.119A_obs'];
+          groupedData[lastObservePeriod]['X.119_fc'] = groupedData[lastObservePeriod]['X.119_obs'];
+          groupedData[lastObservePeriod]['X.5C_fc'] = groupedData[lastObservePeriod]['X.5C_obs'];
+          groupedData[lastObservePeriod]['X.37A_fc'] = groupedData[lastObservePeriod]['X.37A_obs'];
+          groupedData[lastObservePeriod]['X.217_fc'] = groupedData[lastObservePeriod]['X.217_obs'];
+          groupedData[lastObservePeriod]['_isConnectionPoint'] = true;
+        }
       }
     }
 
@@ -163,19 +282,30 @@ const WaterLevelChart = ({ data, dateRange, setDateRange, metadata, selectedStat
     setChartData(formattedData);
   }, [data, dateRange, selectedStations]);
 
-  // Filter stations to display
-  const getVisibleStations = () => {
+  // Get all available stations (base set)
+  const getAllStations = () => {
     if (!selectedStations || selectedStations.length === 0) {
-      return ['X.274', 'X.119A', 'X.119'];
+      return ['X.274', 'X.119A', 'X.119', 'X.5C', 'X.37A', 'X.217'];
     }
     return selectedStations;
   };
 
-  const visibleStations = getVisibleStations();
+  // Filter stations to display - exclude hidden stations
+  const allStations = getAllStations();
+  const visibleStations = allStations.filter(id => !hiddenStations.has(id));
   const colors = {
     'X.274': '#8884d8',
     'X.119A': '#82ca9d',
-    'X.119': '#ffc658'
+    'X.119': '#ffc658',
+    'X.5C': '#ff6b6b',
+    'X.37A': '#4ecdc4',
+    'X.217': '#a29bfe'
+  };
+
+  // Get station name from station_id
+  const getStationName = (stationId) => {
+    const station = metadata.find(s => s.station_id === stationId);
+    return station?.station_name || stationId;
   };
 
   // Calculate Y-axis domain to include all flood stage lines
@@ -245,11 +375,6 @@ const WaterLevelChart = ({ data, dateRange, setDateRange, metadata, selectedStat
     <div className="chart-wrapper">
       <h2 style={{ color: '#667eea', marginBottom: '10px' }}>
         📊 กราฟระดับน้ำ (Observe + Forecast)
-        {selectedStations && selectedStations.length > 0 && (
-          <span style={{ fontSize: '0.8em', marginLeft: '10px', color: '#82ca9d' }}>
-            (แสดง {selectedStations.length} สถานี: {selectedStations.join(', ')})
-          </span>
-        )}
       </h2>
      
 
@@ -311,6 +436,18 @@ const WaterLevelChart = ({ data, dateRange, setDateRange, metadata, selectedStat
               <stop offset="5%" stopColor="#ffc658" stopOpacity={0.8} />
               <stop offset="95%" stopColor="#ffc658" stopOpacity={0.1} />
             </linearGradient>
+            <linearGradient id="colorX5C" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor="#ff6b6b" stopOpacity={0.8} />
+              <stop offset="95%" stopColor="#ff6b6b" stopOpacity={0.1} />
+            </linearGradient>
+            <linearGradient id="colorX37A" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor="#4ecdc4" stopOpacity={0.8} />
+              <stop offset="95%" stopColor="#4ecdc4" stopOpacity={0.1} />
+            </linearGradient>
+            <linearGradient id="colorX217" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor="#a29bfe" stopOpacity={0.8} />
+              <stop offset="95%" stopColor="#a29bfe" stopOpacity={0.1} />
+            </linearGradient>
           </defs>
           <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
           <XAxis
@@ -325,10 +462,15 @@ const WaterLevelChart = ({ data, dateRange, setDateRange, metadata, selectedStat
             tick={{ fontSize: 12 }}
             domain={getYAxisDomain()}
           />
-          <Tooltip content={<CustomTooltip />} />
+          <Tooltip content={<CustomTooltip metadata={metadata} />} />
           <Legend
-            wrapperStyle={{ paddingTop: '10px' }}
-            iconType="line"
+            content={<CustomLegend 
+              colors={colors} 
+              getStationName={getStationName} 
+              allStations={allStations}
+              hiddenStations={hiddenStations}
+              onToggleStation={handleToggleStation}
+            />}
           />
 
           {/* Flood Stage Lines (Bank Levels) - Only for visible stations */}
@@ -404,7 +546,7 @@ const WaterLevelChart = ({ data, dateRange, setDateRange, metadata, selectedStat
                 stroke={colors['X.274']}
                 strokeWidth={3}
                 fill="url(#colorX274)"
-                name="X.274 (Observe)"
+                name={getStationName('X.274')}
                 connectNulls={true}
                 dot={false}
               />
@@ -414,9 +556,9 @@ const WaterLevelChart = ({ data, dateRange, setDateRange, metadata, selectedStat
                 stroke={colors['X.274']}
                 strokeWidth={3}
                 strokeDasharray="5 5"
-                name="X.274 (Forecast)"
                 connectNulls={true}
                 dot={false}
+                legendType="none"
               />
             </>
           )}
@@ -428,7 +570,7 @@ const WaterLevelChart = ({ data, dateRange, setDateRange, metadata, selectedStat
                 stroke={colors['X.119A']}
                 strokeWidth={3}
                 fill="url(#colorX119A)"
-                name="X.119A (Observe)"
+                name={getStationName('X.119A')}
                 connectNulls={true}
                 dot={false}
               />
@@ -438,9 +580,9 @@ const WaterLevelChart = ({ data, dateRange, setDateRange, metadata, selectedStat
                 stroke={colors['X.119A']}
                 strokeWidth={3}
                 strokeDasharray="5 5"
-                name="X.119A (Forecast)"
                 connectNulls={true}
                 dot={false}
+                legendType="none"
               />
             </>
           )}
@@ -453,7 +595,7 @@ const WaterLevelChart = ({ data, dateRange, setDateRange, metadata, selectedStat
                 stroke={colors['X.119']}
                 strokeWidth={3}
                 fill="url(#colorX119)"
-                name="X.119 (Observe)"
+                name={getStationName('X.119')}
                 connectNulls={true}
                 dot={false}
               />
@@ -464,9 +606,83 @@ const WaterLevelChart = ({ data, dateRange, setDateRange, metadata, selectedStat
                 stroke={colors['X.119']}
                 strokeWidth={3}
                 strokeDasharray="5 5"
-                name="X.119 (Forecast)"
                 connectNulls={true}
                 dot={false}
+                legendType="none"
+              />
+            </>
+          )}
+
+          {/* New Stations */}
+          {visibleStations.includes('X.5C') && (
+            <>
+              <Area
+                type="monotone"
+                dataKey="X.5C_obs"
+                stroke={colors['X.5C']}
+                strokeWidth={3}
+                fill="url(#colorX5C)"
+                name={getStationName('X.5C')}
+                connectNulls={true}
+                dot={false}
+              />
+              <Line
+                type="monotone"
+                dataKey="X.5C_fc"
+                stroke={colors['X.5C']}
+                strokeWidth={3}
+                strokeDasharray="5 5"
+                connectNulls={true}
+                dot={false}
+                legendType="none"
+              />
+            </>
+          )}
+          {visibleStations.includes('X.37A') && (
+            <>
+              <Area
+                type="monotone"
+                dataKey="X.37A_obs"
+                stroke={colors['X.37A']}
+                strokeWidth={3}
+                fill="url(#colorX37A)"
+                name={getStationName('X.37A')}
+                connectNulls={true}
+                dot={false}
+              />
+              <Line
+                type="monotone"
+                dataKey="X.37A_fc"
+                stroke={colors['X.37A']}
+                strokeWidth={3}
+                strokeDasharray="5 5"
+                connectNulls={true}
+                dot={false}
+                legendType="none"
+              />
+            </>
+          )}
+          {visibleStations.includes('X.217') && (
+            <>
+              <Area
+                type="monotone"
+                dataKey="X.217_obs"
+                stroke={colors['X.217']}
+                strokeWidth={3}
+                fill="url(#colorX217)"
+                name={getStationName('X.217')}
+                connectNulls={true}
+                dot={false}
+              />
+              <Line
+                type="monotone"
+                dataKey="X.217_fc"
+                stroke={colors['X.217']}
+                strokeWidth={3}
+                strokeDasharray="5 5"
+                connectNulls={true}
+                dot={false}
+                legendType="none"
               />
             </>
           )}
@@ -524,7 +740,7 @@ const WaterLevelChart = ({ data, dateRange, setDateRange, metadata, selectedStat
                   fontSize: '1.1em',
                   fontWeight: 'bold'
                 }}>
-                  สถานี {stationId}
+                  {getStationName(stationId)}
                 </h4>
                 <div style={{ fontSize: '0.95em', lineHeight: '2', color: '#333' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>

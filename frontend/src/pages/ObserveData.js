@@ -58,15 +58,19 @@ function ObserveData() {
   const downloadCSV = () => {
     if (observeData.length === 0) return;
 
-    // Create CSV content
-    const headers = ['วันที่', 'X.274', 'X.119A', 'X.119'];
+    // Create CSV content with all 6 stations
+    const headers = ['วันที่', 'X.274', 'X.119A', 'X.119', 'X.5C', 'X.37A', 'X.217', 'ประเภท'];
     const csvContent = [
       headers.join(','),
       ...observeData.map(row => [
         row.period,
         row.x_274_avg || '',
         row.x_119a_avg || '',
-        row.x_119_avg || ''
+        row.x_119_avg || '',
+        row.x_5c_avg || '',
+        row.x_37a_avg || '',
+        row.x_217_avg || '',
+        row.data_type || 'observe'
       ].join(','))
     ].join('\n');
 
@@ -200,8 +204,8 @@ function ObserveData() {
     if (!window.confirm(
       `ต้องการนำเข้าข้อมูล Forecast จากไฟล์ "${file.name}" หรือไม่?\n\n` +
       'รูปแบบไฟล์ที่รองรับ:\n' +
-      'date_time,x_274,x_119a,x_119\n' +
-      '2025-11-07,18.50,5.20,3.10'
+      'date_time,x_274,x_119a,x_119,x_5c,x_37a,x_217\n' +
+      '2025-11-07,18.50,5.20,3.10,0.75,7.20,2.10'
     )) {
       event.target.value = '';
       return;
@@ -508,13 +512,16 @@ function ObserveData() {
                   <th>X.274 (ม.)</th>
                   <th>X.119A (ม.)</th>
                   <th>X.119 (ม.)</th>
+                  <th>X.5C (ม.)</th>
+                  <th>X.37A (ม.)</th>
+                  <th>X.217 (ม.)</th>
                   <th>ประเภท</th>
                 </tr>
               </thead>
               <tbody>
                 {currentData.length === 0 ? (
                   <tr>
-                    <td colSpan="6" style={{ textAlign: 'center', padding: '40px' }}>
+                    <td colSpan="9" style={{ textAlign: 'center', padding: '40px' }}>
                       ไม่พบข้อมูล
                       {dataTypeFilter === 'observe' ? ' Observe' : 
                        dataTypeFilter === 'forecast' ? ' Forecast' : ''}
@@ -528,6 +535,9 @@ function ObserveData() {
                       <td>{parseFloat(row.x_274_avg).toFixed(2)}</td>
                       <td>{parseFloat(row.x_119a_avg).toFixed(2)}</td>
                       <td>{parseFloat(row.x_119_avg).toFixed(2)}</td>
+                      <td>{parseFloat(row.x_5c_avg).toFixed(2)}</td>
+                      <td>{parseFloat(row.x_37a_avg).toFixed(2)}</td>
+                      <td>{parseFloat(row.x_217_avg).toFixed(2)}</td>
                       <td>
                         <span className={`badge ${row.data_type === 'forecast' ? 'badge-forecast' : 'badge-observe'}`}>
                           {row.data_type === 'forecast' ? 'Forecast' : 'Observe'}

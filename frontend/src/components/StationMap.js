@@ -1,5 +1,5 @@
-import React from 'react';
-import { MapContainer, TileLayer, Marker, Popup, Circle } from 'react-leaflet';
+import React, { useEffect } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, Circle, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -15,6 +15,22 @@ let DefaultIcon = L.icon({
 });
 
 L.Marker.prototype.options.icon = DefaultIcon;
+
+// Component to fit map bounds to all stations
+const FitBounds = ({ metadata }) => {
+    const map = useMap();
+    
+    useEffect(() => {
+        if (metadata && metadata.length > 0) {
+            const bounds = L.latLngBounds(
+                metadata.map(station => [parseFloat(station.lat), parseFloat(station.lon)])
+            );
+            map.fitBounds(bounds, { padding: [50, 50] });
+        }
+    }, [metadata, map]);
+    
+    return null;
+};
 
 const StationMap = ({ metadata, latestData, onStationSelect, selectedStations }) => {
     // Calculate center from stations
@@ -118,13 +134,17 @@ const StationMap = ({ metadata, latestData, onStationSelect, selectedStations })
 
             <MapContainer
                 center={[centerLat, centerLon]}
-                zoom={10}
+                zoom={8}
                 style={{ height: '950px', width: '100%', borderRadius: '10px' }}
             >
                 <TileLayer
                     attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                     url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                    opacity={0.7}
                 />
+                
+                {/* Automatically fit bounds to show all stations */}
+                <FitBounds metadata={metadata} />
 
                 {metadata.map((station) => {
                     const status = getStationStatus(station);
@@ -156,10 +176,10 @@ const StationMap = ({ metadata, latestData, onStationSelect, selectedStations })
                                             borderBottom: '2px solid #667eea',
                                             paddingBottom: '5px'
                                         }}>
-                                            สถานี {station.station_id}
+                                            {station.station_name || station.station_id}
                                         </h3>
                                         <p style={{ margin: '5px 0' }}>
-                                            <strong>ลุ่มน้ำ:</strong> {station.subbasin_name}
+                                            <strong>รหัสสถานี:</strong> {station.station_id}
                                         </p>
                                         <p style={{ margin: '5px 0' }}>
                                             <strong>พิกัด:</strong><br />

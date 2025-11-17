@@ -38,7 +38,9 @@ const dbConfig = {
   database: process.env.DB_NAME || 'waterlevel_db',
   waitForConnections: true,
   connectionLimit: 10,
-  queueLimit: 0
+  queueLimit: 0,
+  charset: 'utf8mb4',
+  collation: 'utf8mb4_unicode_ci'
 };
 
 // Create connection pool
@@ -216,12 +218,21 @@ app.get('/api/waterlevel/chart', async (req, res) => {
         AVG(x_274) as x_274_avg,
         AVG(x_119a) as x_119a_avg,
         AVG(x_119) as x_119_avg,
+        AVG(x_5c) as x_5c_avg,
+        AVG(x_37a) as x_37a_avg,
+        AVG(x_217) as x_217_avg,
         MAX(x_274) as x_274_max,
         MAX(x_119a) as x_119a_max,
         MAX(x_119) as x_119_max,
+        MAX(x_5c) as x_5c_max,
+        MAX(x_37a) as x_37a_max,
+        MAX(x_217) as x_217_max,
         MIN(x_274) as x_274_min,
         MIN(x_119a) as x_119a_min,
-        MIN(x_119) as x_119_min
+        MIN(x_119) as x_119_min,
+        MIN(x_5c) as x_5c_min,
+        MIN(x_37a) as x_37a_min,
+        MIN(x_217) as x_217_min
       FROM waterlevel_data
       ${whereClause}
       GROUP BY period, data_type
@@ -264,7 +275,7 @@ app.get('/api/alerts', async (req, res) => {
         if (waterLevel && waterLevel >= bankLevel * 0.8) { // Alert if >= 80% of bank level
           alerts.push({
             station_id: station.station_id,
-            station_name: station.subbasin_name,
+            station_name: station.station_name || station.subbasin_name,
             water_level: waterLevel,
             bank_level: bankLevel,
             percentage: ((waterLevel / bankLevel) * 100).toFixed(2),
@@ -456,8 +467,8 @@ app.post('/api/import/observe', async (req, res) => {
           continue; // Skip to next date
         }
 
-        // Filter data for our 3 stations using stationcode
-        const stationCodes = ['X.274', 'X.119A', 'X.119'];
+        // Filter data for our 6 stations using stationcode
+        const stationCodes = ['X.274', 'X.119A', 'X.119', 'X.5C', 'X.37A', 'X.217'];
         const filteredData = records.filter(item => {
           const stationCode = item.stationcode || item.stationCode || item.station_code;
           return stationCodes.includes(stationCode);
@@ -494,7 +505,10 @@ app.post('/api/import/observe', async (req, res) => {
           date_time: recordDate,
           x_274: null,
           x_119a: null,
-          x_119: null
+          x_119: null,
+          x_5c: null,
+          x_37a: null,
+          x_217: null
         };
 
         filteredData.forEach(item => {
@@ -519,6 +533,12 @@ app.post('/api/import/observe', async (req, res) => {
               stationData.x_119a = waterLevel;
             } else if (stationCode === 'X.119') {
               stationData.x_119 = waterLevel;
+            } else if (stationCode === 'X.5C') {
+              stationData.x_5c = waterLevel;
+            } else if (stationCode === 'X.37A') {
+              stationData.x_37a = waterLevel;
+            } else if (stationCode === 'X.217') {
+              stationData.x_217 = waterLevel;
             }
           }
         });
@@ -528,7 +548,10 @@ app.post('/api/import/observe', async (req, res) => {
         // ตรวจสอบว่ามีข้อมูลที่ valid อย่างน้อย 1 สถานี
         const hasValidData = stationData.x_274 !== null || 
                             stationData.x_119a !== null || 
-                            stationData.x_119 !== null;
+                            stationData.x_119 !== null ||
+                            stationData.x_5c !== null ||
+                            stationData.x_37a !== null ||
+                            stationData.x_217 !== null;
 
         if (!hasValidData) {
           console.log(`⚠️ No valid water level data for ${currentDate}, skipping database insert`);
@@ -550,18 +573,24 @@ app.post('/api/import/observe', async (req, res) => {
               `UPDATE waterlevel_data 
                SET x_274 = COALESCE(?, x_274), 
                    x_119a = COALESCE(?, x_119a), 
-                   x_119 = COALESCE(?, x_119)
+                   x_119 = COALESCE(?, x_119),
+                   x_5c = COALESCE(?, x_5c),
+                   x_37a = COALESCE(?, x_37a),
+                   x_217 = COALESCE(?, x_217)
                WHERE date_time = ? AND data_type = ?`,
-              [stationData.x_274, stationData.x_119a, stationData.x_119, stationData.date_time, 'observe']
+              [stationData.x_274, stationData.x_119a, stationData.x_119, 
+               stationData.x_5c, stationData.x_37a, stationData.x_217,
+               stationData.date_time, 'observe']
             );
             totalUpdated++;
             console.log(`✅ Updated data for ${currentDate}`);
           } else {
             // Insert new record
             await pool.query(
-              `INSERT INTO waterlevel_data (date_time, x_274, x_119a, x_119, data_type) 
-               VALUES (?, ?, ?, ?, ?)`,
-              [stationData.date_time, stationData.x_274, stationData.x_119a, stationData.x_119, 'observe']
+              `INSERT INTO waterlevel_data (date_time, x_274, x_119a, x_119, x_5c, x_37a, x_217, data_type) 
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+              [stationData.date_time, stationData.x_274, stationData.x_119a, stationData.x_119,
+               stationData.x_5c, stationData.x_37a, stationData.x_217, 'observe']
             );
             totalImported++;
             console.log(`✅ Imported data for ${currentDate}`);
@@ -665,15 +694,19 @@ app.post('/api/import/forecast/csv', upload.single('file'), async (req, res) => 
     const header = lines[0].split(',').map(h => h.trim().toLowerCase());
     console.log('📋 CSV Headers:', header);
 
-    // Expected format: date_time,x_274,x_119a,x_119
-    // or: date,x_274,x_119a,x_119
-    const dateIndex = header.findIndex(h => h === 'date_time' || h === 'date');
+    // Expected format: date_time,x_274,x_119a,x_119,x_5c,x_37a,x_217
+    // or: ,X.274,X.119A,X.119,X.5C,X.37A,X.217 (first column empty = date column)
+    // or: date,x_274,x_119a,x_119,x_5c,x_37a,x_217
+    const dateIndex = header.findIndex(h => h === 'date_time' || h === 'date' || h === '');
     const x274Index = header.findIndex(h => h === 'x_274' || h === 'x.274');
     const x119aIndex = header.findIndex(h => h === 'x_119a' || h === 'x.119a');
     const x119Index = header.findIndex(h => h === 'x_119' || h === 'x.119');
+    const x5cIndex = header.findIndex(h => h === 'x_5c' || h === 'x.5c');
+    const x37aIndex = header.findIndex(h => h === 'x_37a' || h === 'x.37a');
+    const x217Index = header.findIndex(h => h === 'x_217' || h === 'x.217');
 
     if (dateIndex === -1) {
-      throw new Error('CSV must have a "date_time" or "date" column');
+      throw new Error('CSV must have a "date_time" or "date" column (or first column as date)');
     }
 
     let importedCount = 0;
@@ -697,6 +730,9 @@ app.post('/api/import/forecast/csv', upload.single('file'), async (req, res) => 
       const x_274 = x274Index !== -1 && values[x274Index] ? parseFloat(values[x274Index]) : null;
       const x_119a = x119aIndex !== -1 && values[x119aIndex] ? parseFloat(values[x119aIndex]) : null;
       const x_119 = x119Index !== -1 && values[x119Index] ? parseFloat(values[x119Index]) : null;
+      const x_5c = x5cIndex !== -1 && values[x5cIndex] ? parseFloat(values[x5cIndex]) : null;
+      const x_37a = x37aIndex !== -1 && values[x37aIndex] ? parseFloat(values[x37aIndex]) : null;
+      const x_217 = x217Index !== -1 && values[x217Index] ? parseFloat(values[x217Index]) : null;
 
       // Parse date (support multiple formats)
       let dateTime;
@@ -737,17 +773,20 @@ app.post('/api/import/forecast/csv', upload.single('file'), async (req, res) => 
             `UPDATE waterlevel_data 
              SET x_274 = COALESCE(?, x_274), 
                  x_119a = COALESCE(?, x_119a), 
-                 x_119 = COALESCE(?, x_119)
+                 x_119 = COALESCE(?, x_119),
+                 x_5c = COALESCE(?, x_5c),
+                 x_37a = COALESCE(?, x_37a),
+                 x_217 = COALESCE(?, x_217)
              WHERE date_time = ? AND data_type = ?`,
-            [x_274, x_119a, x_119, mysqlDate, 'forecast']
+            [x_274, x_119a, x_119, x_5c, x_37a, x_217, mysqlDate, 'forecast']
           );
           updatedCount++;
         } else {
           // Insert new record
           await pool.query(
-            `INSERT INTO waterlevel_data (date_time, x_274, x_119a, x_119, data_type) 
-             VALUES (?, ?, ?, ?, ?)`,
-            [mysqlDate, x_274, x_119a, x_119, 'forecast']
+            `INSERT INTO waterlevel_data (date_time, x_274, x_119a, x_119, x_5c, x_37a, x_217, data_type) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            [mysqlDate, x_274, x_119a, x_119, x_5c, x_37a, x_217, 'forecast']
           );
           importedCount++;
         }

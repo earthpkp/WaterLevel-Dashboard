@@ -20,8 +20,8 @@ const StationCard = ({ station, currentLevel, status }) => {
       <h2>สถานี {station.station_id}</h2>
       <div className="station-info">
         <div className="info-row">
-          <span className="info-label">ชื่อลุ่มน้ำ:</span>
-          <span className="info-value">{station.subbasin_name}</span>
+          <span className="info-label">ชื่อสถานี:</span>
+          <span className="info-value">{station.station_name || station.subbasin_name}</span>
         </div>
         <div className="info-row">
           <span className="info-label">ละติจูด:</span>

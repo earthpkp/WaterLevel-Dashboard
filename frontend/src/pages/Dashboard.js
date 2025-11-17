@@ -13,11 +13,21 @@ function Dashboard() {
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [dateRange, setDateRange] = useState({
-    start: '2025-10-24',
-    end: '2025-11-16',
-    aggregation: 'day'
-  });
+  
+  // Calculate default date range: 7 days ago to today
+  const getDefaultDateRange = () => {
+    const today = new Date();
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(today.getDate() - 7);
+    
+    return {
+      start: sevenDaysAgo.toISOString().split('T')[0],
+      end: '', // Empty end date
+      aggregation: 'day'
+    };
+  };
+  
+  const [dateRange, setDateRange] = useState(getDefaultDateRange());
   const [selectedStations, setSelectedStations] = useState([]);
 
   useEffect(() => {
