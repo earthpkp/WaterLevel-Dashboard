@@ -1,0 +1,85 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: waterdashboard-mysql-prod
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-ChangeMeInProduction!}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-waterlevel_db}
+      MYSQL_USER: ${MYSQL_USER:-wateruser}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-ChangeMeInProduction!}
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - mysql_data_prod:/var/lib/mysql
+      - ./init-mysql.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - waterdashboard-network-prod
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-ChangeMeInProduction!}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    command: --default-authentication-plugin=mysql_native_password --max_connections=200
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+    image: waterdashboard-backend:latest
+    container_name: waterdashboard-backend-prod
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: ${MYSQL_USER:-wateruser}
+      DB_PASSWORD: ${MYSQL_PASSWORD:-ChangeMeInProduction!}
+      DB_NAME: ${MYSQL_DATABASE:-waterlevel_db}
+      PORT: 5000
+    ports:
+      - "${BACKEND_PORT:-5000}:5000"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - waterdashboard-network-prod
+    healthcheck:
+      test: ["CMD", "sh", "-c", "wget --quiet --tries=1 --spider http://localhost:$$PORT/api/metadata || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+      args:
+        REACT_APP_API_URL: ${REACT_APP_API_URL:-http://localhost:5000}
+    image: waterdashboard-frontend:latest
+    container_name: waterdashboard-frontend-prod
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - waterdashboard-network-prod
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000", "||", "exit", "1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  mysql_data_prod:
+    driver: local
+
+networks:
+  waterdashboard-network-prod:
+    driver: bridge

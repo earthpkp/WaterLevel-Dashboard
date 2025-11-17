@@ -53,7 +53,6 @@ const WaterLevelChart = ({ data, dateRange, setDateRange, metadata, selectedStat
   };
 
   const handleBrushChange = (brushData) => {
-    console.log('Brush changed:', brushData);
     if (brushData) {
       setBrushRange(brushData);
     }
@@ -89,10 +88,6 @@ const WaterLevelChart = ({ data, dateRange, setDateRange, metadata, selectedStat
     }).format(now);
     
     const currentDate = thailandDateStr; // Already in YYYY-MM-DD format
-
-    console.log('📅 Current Thailand Date:', currentDate);
-    console.log('🕐 Browser Local Time:', now.toLocaleString());
-    console.log('🇹🇭 Thailand Time:', now.toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' }));
 
     // Group data by period and separate observe/forecast based on date
     const groupedData = {};
@@ -133,8 +128,6 @@ const WaterLevelChart = ({ data, dateRange, setDateRange, metadata, selectedStat
       // else: ignore forecast data for past dates
     });
 
-    console.log('🎯 Last Observe Period:', lastObservePeriod);
-
     // Strategy: Create smooth connection between Observe and Forecast lines
     // Add BOTH observe data to forecast line AND forecast data to connection point
     if (lastObserveData && lastObservePeriod && currentDate && groupedData[currentDate]) {
@@ -160,18 +153,6 @@ const WaterLevelChart = ({ data, dateRange, setDateRange, metadata, selectedStat
     }
 
     const finalData = Object.values(groupedData).sort((a, b) => a.period.localeCompare(b.period));
-    
-    // Debug: Log connection points
-    console.log('📊 Chart Data:');
-    finalData.forEach(item => {
-      if (item.period >= '2025-11-11' && item.period <= '2025-11-14') {
-        console.log(`  ${item.period}:`, {
-          obs: item['X.119_obs']?.toFixed(2) || 'null',
-          fc: item['X.119_fc']?.toFixed(2) || 'null',
-          line: item['X.119_line']?.toFixed(2) || 'null'
-        });
-      }
-    });
     
     return finalData;
   };
@@ -508,9 +489,9 @@ const WaterLevelChart = ({ data, dateRange, setDateRange, metadata, selectedStat
           marginTop: '20px', 
           padding: '20px', 
           background: '#ffffff', 
-          borderRadius: '10px',
+          /* borderRadius: '10px',
           border: '1px solid #e0e0e0',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+          boxShadow: '0 2px 8px rgba(0,0,0,0.1)' */
         }}>
           <h3 style={{ 
             marginBottom: '15px', 
