@@ -23,7 +23,7 @@ nano .env.prod     # Linux/Mac
 
 ```bash
 # Build images and start containers
-docker-compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
 
 # View logs
 docker-compose -f docker-compose.prod.yml logs -f

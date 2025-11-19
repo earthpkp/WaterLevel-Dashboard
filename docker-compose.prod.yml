@@ -9,7 +9,7 @@ services:
       MYSQL_USER: ${MYSQL_USER:-wateruser}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-ChangeMeInProduction!}
     ports:
-      - "${MYSQL_PORT:-3306}:3306"
+      - "${MYSQL_PORT:-3308}:3306"
     volumes:
       - mysql_data_prod:/var/lib/mysql
       - ./init-mysql.sql:/docker-entrypoint-initdb.d/init.sql
@@ -39,7 +39,7 @@ services:
       DB_NAME: ${MYSQL_DATABASE:-waterlevel_db}
       PORT: 5000
     ports:
-      - "${BACKEND_PORT:-5000}:5000"
+      - "${BACKEND_PORT:-5001}:5000"
     depends_on:
       mysql:
         condition: service_healthy
@@ -64,17 +64,18 @@ services:
     environment:
       NODE_ENV: production
     ports:
-      - "${FRONTEND_PORT:-3000}:3000"
+      - "${FRONTEND_PORT:-3001}:3000"
     depends_on:
       backend:
         condition: service_healthy
     networks:
       - waterdashboard-network-prod
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000", "||", "exit", "1"]
+      test: ["CMD", "sh", "-c", "wget --quiet --tries=1 --spider http://localhost:3000 || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 40s
 
 volumes:
   mysql_data_prod:
